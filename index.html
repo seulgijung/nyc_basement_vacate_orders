@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>NYC Illegal Basement Vacate Orders — Interactive Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Mapbox GL JS: the library that draws the map -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+
+  <!-- Geocoder plugin: powers the address search box -->
+  <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.css" type="text/css" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.3/mapbox-gl-geocoder.min.js"></script>
+
+  <style>
+    html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+    #map { position: absolute; inset: 0; }   /* the map fills the window */
+    /* Add to your <style> block */
+    #legend {
+      position: absolute; z-index: 3; bottom: 18px; right: 12px;
+      background: #fff; padding: 10px 12px;
+      border: 1px solid #0000ff; border-radius: 2px;
+      font-size: 12px; color: #0000ff;}
+    #legend h4 { margin: 0 0 6px; font-size: 12px; }
+    #legend .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+    #legend .swatch { width: 14px; height: 14px; border-radius: 2px; }
+    /* Add to your <style> block */
+    #tooltip {
+      position: absolute; z-index: 3;
+      pointer-events: none;            /* let the mouse "pass through" to the map */
+      display: none;                   /* hidden until we hover a district */
+      background: #fff; padding: 8px 10px;
+      border: 1px solid #0000ff; border-radius: 2px;
+      font-size: 13px; line-height: 1.35; max-width: 220px; color: #0000ff;
+    }
+    #tooltip .name { font-weight: 900; }
+    #tooltip .sub  { color: #3a3aaa; }
+    /* Add to your <style> block */
+    #drawer {
+      position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+      background: #fff; color: #0000ff;
+      padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
+      border-top: 1px solid #0000ff;
+      transform: translateY(110%);     /* parked off-screen */
+      transition: transform .25s ease;
+    }
+    #drawer.open { transform: translateY(0); }   /* slides up when open */
+    #drawer .name { font-weight: 900; font-size: 16px; }
+    #drawer .sub  { color: #3a3aaa; margin-top: 4px; }
+    #drawer .close {
+      position: absolute; top: 8px; right: 12px;
+      border: none; background: none; font-size: 22px; cursor: pointer; color: #0000ff;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Add inside <body>, after <div id="map"></div> -->
+<div id="legend">
+  <h4>Vacate orders & complaints</h4>
+  <div class="row"><span class="swatch" style="background:#ffffff"></span> 0</div>
+  <div class="row"><span class="swatch" style="background:#ffff00"></span> 50</div>
+  <div class="row"><span class="swatch" style="background:#ffa500"></span> 150</div>
+  <div class="row"><span class="swatch" style="background:#ff0000"></span> 300+</div>
+</div>
+
+<!-- Add inside <body> -->
+<div id="tooltip"></div>
+
+<!-- Add inside <body> -->
+<div id="drawer">
+  <button class="close" aria-label="Close">×</button>
+  <div class="name"></div>
+  <div class="sub"></div>
+</div>
+
+  <script>
+    // All of our JavaScript will go here, step by step.
+    // Your personal access token (Step 0). Keep the quotes.
+mapboxgl.accessToken = 'pk.eyJ1Ijoic2V1bGdpanVuZyIsImEiOiJjbXI3MTQzYnAxNXh6MnhwbGo5bzg3Y2Z4In0.kvJaF5mxDwkBgUw7VN_8hw';
+
+const map = new mapboxgl.Map({
+  container: 'map',                          // matches <div id="map">
+  style: 'mapbox://styles/mapbox/light-v11', // a clean, light basemap
+  center: [-73.98, 40.70],                   // [longitude, latitude] of NYC
+  zoom: 9.8
+});
+
+// Candidate -> color. (ColorBrewer "Dark2": colorblind-friendly.)
+const CANDIDATE_COLORS = [
+  'Mamdani',  '#1b9e77',
+  'Cuomo',    '#7570b3',
+  'Lander',   '#d95f02',
+  'Adams',    '#e7298a',
+  'Stringer', '#66a61e'
+];
+
+// Wait until the basemap is ready, THEN add our data on top.
+map.on('load', () => {
+  // Load the GeoJSON file as a data "source".
+  // promoteId tells Mapbox to use each district's ElectDist value as its id,
+  // which we will need for hover highlighting later.
+  map.addSource('districts', {
+    type: 'geojson',
+    data: 'basement_map.geojson',
+    promoteId: 'boro_cd'
+  });
+
+  // The colored fill: one shade per winning candidate.
+  map.addLayer({
+    id: 'districts-fill',
+    type: 'fill',
+    source: 'districts',
+    paint: {
+      'fill-color': [
+        'interpolate',
+        ['linear'],
+        ['get', 'vacate_total'],   // see the total number for each boro
+        0,   '#f7f7f7',            // 0: white
+        50,  '#ffff00',            // 50: yellow
+        150, '#ffa500',            // 150: oragne
+        300, '#ff0000'             // 300: red
+      ],
+      // Replace the fill layer's  'fill-opacity': 0.7  with this, so the
+      // district under the cursor brightens:
+      'fill-opacity': [
+        'case', ['boolean', ['feature-state', 'hover'], false],
+        0.95,   // when hovered
+        0.7     // normally
+      ]
+    }
+  });
+  // Thin white borders between districts.
+  // (Add this INSIDE map.on('load'), right after the fill layer.)
+  map.addLayer({
+    id: 'districts-line',
+    type: 'line',
+    source: 'districts',
+    paint: { 'line-color': '#ffffff', 'line-width': 0.4 }
+  });
+  // A dark outline that appears ONLY on the hovered district.
+  // (Add INSIDE map.on('load'), after the borders layer.)
+  map.addLayer({
+    id: 'districts-hover',
+    type: 'line',
+    source: 'districts',
+    paint: {
+      'line-color': 'rgb(200, 200, 200)',
+      'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 1, 0]
+    }
+  });
+  // Add INSIDE map.on('load'), after the layers.
+  const tooltip = document.getElementById('tooltip');
+  let hoveredId = null;
+
+  // Build the text shown for one district.
+  function describe(props) {
+  return {
+    name: `${props.boro_name}: CD ${props.boro_cd}`,
+    sub:  `Vacate orders & complaints: <b>${props.vacate_total.toLocaleString()}</b>`
+  };
+}
+
+  // Only devices with a real mouse get hover behavior (desktops/laptops).
+  const canHover = window.matchMedia('(hover: hover)').matches;
+
+  if (canHover) {
+    map.on('mousemove', 'districts-fill', (e) => {
+      map.getCanvas().style.cursor = 'pointer';
+      const f = e.features[0];
+
+      // Move the "hover" highlight from the old district to the new one.
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'districts', id: hoveredId }, { hover: false });
+      }
+      hoveredId = f.id;
+      map.setFeatureState({ source: 'districts', id: hoveredId }, { hover: true });
+
+      const info = describe(f.properties);
+      tooltip.innerHTML = `<div class="name">${info.name}</div><div class="sub">${info.sub}</div>`;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.point.x + 14) + 'px';
+      tooltip.style.top  = (e.point.y + 14) + 'px';
+    });
+
+    map.on('mouseleave', 'districts-fill', () => {
+      map.getCanvas().style.cursor = '';
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'districts', id: hoveredId }, { hover: false });
+      }
+      hoveredId = null;
+      tooltip.style.display = 'none';
+    });
+  }
+  // Add this right after the closing brace of the `if (canHover) { ... }`
+  // block from Step 5, so the whole thing reads `if (canHover) { ... } else { ... }`.
+  else {
+    // Mobile / touch: tap a district to open the bottom drawer.
+    const drawer = document.getElementById('drawer');
+
+    map.on('click', 'districts-fill', (e) => {
+      const f = e.features[0];
+
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'districts', id: hoveredId }, { hover: false });
+      }
+      hoveredId = f.id;
+      map.setFeatureState({ source: 'districts', id: hoveredId }, { hover: true });
+
+      const info = describe(f.properties);
+      drawer.querySelector('.name').textContent = info.name;
+      drawer.querySelector('.sub').innerHTML = info.sub;
+      drawer.classList.add('open');
+    });
+
+    drawer.querySelector('.close').addEventListener('click', () => {
+      drawer.classList.remove('open');
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: 'districts', id: hoveredId }, { hover: false });
+        hoveredId = null;
+      }
+    });
+}
+});
+
+// Zoom-in / zoom-out / compass buttons
+map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+// Add right AFTER your NavigationControl line (outside map.on('load')).
+const geocoder = new MapboxGeocoder({
+  accessToken: mapboxgl.accessToken,
+  mapboxgl: mapboxgl,
+  marker: true,
+  placeholder: 'Search your address',
+  // Keep results within NYC: [west, south, east, north]
+  bbox: [-74.2591, 40.4774, -73.7002, 40.9162],
+  proximity: { longitude: -73.98, latitude: 40.70 }
+});
+map.addControl(geocoder, 'top-left');
+
+
+
+
+  </script>
+</body>
+</html>
