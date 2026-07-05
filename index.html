@@ -18,13 +18,12 @@
     #map { position: absolute; inset: 0; }   /* the map fills the window */
     /* Add to your <style> block */
     #legend {
-      position: absolute; z-index: 3; bottom: 18px; right: 12px;
-      background: #fff; padding: 10px 12px;
-      border: 1px solid #0000ff; border-radius: 2px;
-      font-size: 12px; color: #0000ff;}
-    #legend h4 { margin: 0 0 6px; font-size: 12px; }
+      /* background: #fff; padding: 10px 12px; */
+      /* border: 1px solid #0000ff; border-radius: 2px; */
+      font-size: 15px; color: #0000ff;}
+    #legend h4 { margin: 0 0 6px; font-size: 15px; }
     #legend .row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
-    #legend .swatch { width: 14px; height: 14px; border-radius: 2px; }
+    #legend .swatch { width: 20px; height: 20px; }
     /* Add to your <style> block */
     #tooltip {
       position: absolute; z-index: 3;
@@ -52,19 +51,41 @@
       position: absolute; top: 8px; right: 12px;
       border: none; background: none; font-size: 22px; cursor: pointer; color: #0000ff;
     }
+    #panel {
+      background: #fff; padding: 10px 12px;
+      position: absolute; z-index: 5;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 380px;
+      padding: 20px;
+      border: 1px solid #0000ff;
+      box-sizing: border-box;
+    }
+    #panel-title {
+      color: #0000ff;
+      margin-top: 0;
+    }
+    #panel .mapboxgl-ctrl-geocoder {
+      margin-bottom: 16px;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
-  <!-- Add inside <body>, after <div id="map"></div> -->
-<div id="legend">
-  <h4>Vacate orders & complaints</h4>
-  <div class="row"><span class="swatch" style="background:#ffffff"></span> 0</div>
-  <div class="row"><span class="swatch" style="background:#ffff00"></span> 50</div>
-  <div class="row"><span class="swatch" style="background:#ffa500"></span> 150</div>
-  <div class="row"><span class="swatch" style="background:#ff0000"></span> 300+</div>
+  <div id="panel">
+  <!-- 제목, 검색창, 범례가 여기 안으로 들어올 예정 -->
+   <h1 id="panel-title">NYC Illegal Basement Vacate Orders</h1>
+   <div id="legend">
+    <h4>Vacate orders & complaints</h4>
+    <div class="row"><span class="swatch" style="background:#ffffff"></span> 0</div>
+    <div class="row"><span class="swatch" style="background:#ffff00"></span> 50</div>
+    <div class="row"><span class="swatch" style="background:#ffa500"></span> 150</div>
+    <div class="row"><span class="swatch" style="background:#ff0000"></span> 300+</div>
+  </div>
 </div>
+  
 
 <!-- Add inside <body> -->
 <div id="tooltip"></div>
@@ -238,7 +259,8 @@ const geocoder = new MapboxGeocoder({
   bbox: [-74.2591, 40.4774, -73.7002, 40.9162],
   proximity: { longitude: -73.98, latitude: 40.70 }
 });
-map.addControl(geocoder, 'top-left');
+document.getElementById('panel-title')
+  .insertAdjacentElement('afterend', geocoder.onAdd(map));
 
 
 
